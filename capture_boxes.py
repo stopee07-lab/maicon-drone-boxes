@@ -1,4 +1,4 @@
-"""Capture one official aerial feed and record obstacle detections per JPEG."""
+"""Capture one official aerial feed and record box and UGV observations."""
 
 import argparse
 from collections import Counter
@@ -17,6 +17,8 @@ import numpy as np
 
 from box_detector import detect_boxes
 from drone_feed import DroneFeed, FeedError
+from ugv_detector import detect_ugvs
+from ugv_tracking import UGVTracker
 
 
 SEOUL = timezone(timedelta(hours=9))
@@ -66,13 +68,34 @@ def analyze_image(image, roi=None):
         {"bbox_px": list(box.bbox_px), "center_px": list(box.center_px), "score": round(box.confidence, 3)}
         for box in boxes
     ]
+    ugvs = detect_ugvs(image, roi=roi)
     return {"image_size_px": [image.shape[1], image.shape[0]],
-            "observed_count": len(observations), "observations": observations}
+            "observed_count": len(observations), "observations": observations,
+            "ugv_count": len(ugvs), "ugvs": ugvs}
 
 
 def analyze_jpeg(jpeg, roi=None):
-    """Decode one JPEG and return the pixels and count of detected box candidates."""
+    """Decode a JPEG and return box and UGV counts and pixel coordinates."""
     return analyze_image(decode_image(jpeg), roi)
+
+
+def render_ugv_overlay(image, ugvs, path, roi=None):
+    """Draw UGV locations and their visual track IDs."""
+    height, width = image.shape[:2]
+    left, top, right, bottom = roi if roi is not None else (0, 0, width, height)
+    canvas = image[top:bottom, left:right].copy()
+    color = (0, 210, 255)
+    for index, ugv in enumerate(ugvs, 1):
+        x1, y1, x2, y2 = map(round, ugv['bbox_px'])
+        cv2.rectangle(canvas, (x1-left, y1-top), (x2-left-1, y2-top-1), color, 2)
+        title = ugv.get('track_id') or f'UGV {index}'
+        label_position = (max(0, x1-left), max(14, y1-top-6))
+        cv2.putText(canvas, title, label_position, cv2.FONT_HERSHEY_SIMPLEX, .42, (0, 0, 0), 3)
+        cv2.putText(canvas, title, label_position, cv2.FONT_HERSHEY_SIMPLEX, .42, color, 1)
+    ok, data = cv2.imencode('.png', canvas)
+    if not ok:
+        raise ValueError('Could not encode UGV overlay')
+    write_atomic(path, data.tobytes())
 
 
 def render_overlay(image, observations, path, roi):
@@ -102,7 +125,7 @@ def frame_state(frame, received_at, last_capture, unknown_time_hashes):
     return "fresh" if -1 <= age_s <= maximum_age_s else "outdated"
 
 
-def save_frame(directory, number, frame, received_at, state, roi):
+def save_frame(directory, number, frame, received_at, state, roi, *, tracker=None):
     base = f"frame-{number:04d}"
     jpeg_path, overlay_path = directory / f"{base}.jpg", directory / f"{base}.png"
     write_atomic(jpeg_path, frame.jpeg)
@@ -119,11 +142,21 @@ def save_frame(directory, number, frame, received_at, state, roi):
     try:
         image = decode_image(frame.jpeg)
         analysis = analyze_image(image, roi)
+        if tracker is not None and state == 'fresh' and frame.captured_at is not None:
+            tracked = tracker.update(analysis['ugvs'],frame.captured_at.timestamp(),frame.content_sha256,
+                                     camera=frame.camera)
+            analysis['tracking'] = {k:v for k,v in tracked.items() if k!='ugvs'}
+            if tracked['accepted']:
+                analysis['ugvs'] = tracked['ugvs']
+        ugv_overlay = directory / f'{base}-ugvs.png'
+        render_ugv_overlay(image,analysis['ugvs'],ugv_overlay,roi)
         render_overlay(image, analysis["observations"], overlay_path, roi)
         record.update(analysis)
         record["overlay"] = overlay_path.name
+        record['ugv_overlay'] = ugv_overlay.name
     except (ValueError, cv2.error) as error:
-        record.update(observed_count=None, observations=[], analysis_error=str(error))
+        record.update(observed_count=None, observations=[], ugv_count=None, ugvs=[],
+                      analysis_error=str(error))
     return record
 
 
@@ -131,6 +164,7 @@ def run_capture(feed, directory, *, mode, camera, frames, seconds, roi=None):
     directory.mkdir(parents=True, exist_ok=False)
     stats = Counter()
     last_capture = None
+    tracker = UGVTracker()
     unknown_time_hashes = set()
     started = time.monotonic()
     deadline = started + seconds
@@ -154,7 +188,8 @@ def run_capture(feed, directory, *, mode, camera, frames, seconds, roi=None):
                     interval = max(1.0, min(5.0, frame.frame_interval_s))
                     state = frame_state(frame, received, last_capture, unknown_time_hashes)
                     if state in ("fresh", "unknown_capture_time"):
-                        record = save_frame(directory, stats["saved_frames"] + 1, frame, received, state, roi)
+                        record = save_frame(directory, stats["saved_frames"] + 1, frame, received, state, roi,
+                                            tracker=tracker)
                         manifest.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
                         manifest.flush()
                         stats["saved_frames"] += 1
@@ -184,7 +219,7 @@ def run_capture(feed, directory, *, mode, camera, frames, seconds, roi=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="상공 JPEG 수집 및 상자 객체 인식")
+    parser = argparse.ArgumentParser(description="상공 JPEG 수집과 상자·UGV 검출")
     parser.add_argument("--mode", choices=("practice", "match"), default="practice")
     parser.add_argument("--camera", choices=("test1", "test2"), help="연습장 영상 채널")
     parser.add_argument("--origin", required=True, help="카메라 서버의 http(s)://호스트:포트")

@@ -1,0 +1,74 @@
+{
+  "release": "body-ugv-20261119-r4",
+  "scope": "Aerial UGV body detection and temporary visual tracks",
+  "detector_sha256": "29c2097be4cf54b09bbdcbd26c38dcfbaa390e5543375da81096d04783ce9143",
+  "baseline_detector_sha256": "629abe436cc3df6c8865144c11ec27b574c53f123b2172eb7498f0336309a5b9",
+  "matching": "one-to-one by center distance up to 20 px; frozen clip exclusions",
+  "roi_px": [
+    255,
+    0,
+    1010,
+    720
+  ],
+  "real_practice_images": {
+    "seen": {
+      "labels_sha256": "926f0a5973b236cb59a1a5da336bade507accaa3c9c73092368727053ed7b93f",
+      "evaluation": {
+        "baseline": {
+          "tp": 26,
+          "fp": 1,
+          "fn": 5,
+          "frames": 13,
+          "precision": 0.9629629629629629,
+          "recall": 0.8387096774193549,
+          "median_center_error_px": 4.6075,
+          "median_ms": 52.897
+        },
+        "current": {
+          "tp": 30,
+          "fp": 0,
+          "fn": 1,
+          "frames": 13,
+          "precision": 1.0,
+          "recall": 0.967741935483871,
+          "median_center_error_px": 5.064,
+          "median_ms": 82.816
+        }
+      }
+    },
+    "holdout": {
+      "labels_sha256": "a548c68720733b48d87f76a7714f475df3251ce4b66d3da513a7e212312a2c17",
+      "evaluation": {
+        "baseline": {
+          "tp": 13,
+          "fp": 0,
+          "fn": 3,
+          "frames": 10,
+          "precision": 1.0,
+          "recall": 0.8125,
+          "median_center_error_px": 4.5,
+          "median_ms": 45.579
+        },
+        "current": {
+          "tp": 14,
+          "fp": 0,
+          "fn": 2,
+          "frames": 10,
+          "precision": 1.0,
+          "recall": 0.875,
+          "median_center_error_px": 5.0,
+          "median_ms": 79.156
+        }
+      }
+    }
+  },
+  "validation_scope": "13 development photos plus 10 separately annotated photos not used for tuning; similar practice arena and repeated physical equipment",
+  "box_detector_sha256": "7e22b9976c9c4270113d34e53f7bde78f35dac914b76a9e53f16c223dc50ff82",
+  "standalone_tests": {
+    "OpenCV 5.1": 19,
+    "OpenCV 4.10": 19
+  },
+  "hardware_tested": false,
+  "tested_worktree_detector_sha256": "d8c78944af067a8d91f4f7a57c52b9fe457f1368bd69d9b39812bb14e2051c4e",
+  "detector_hash_format": "Git source bytes with LF line endings; tested checkout differed only in line endings"
+}
