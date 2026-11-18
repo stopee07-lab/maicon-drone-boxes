@@ -1,0 +1,11 @@
+captures/
+.venv/
+.env
+.env.*
+__pycache__/
+*.py[cod]
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.jsonl
